@@ -28,8 +28,8 @@
  * AUTHOR: Bruce JK Huang (bjhuang[at]umich.edu)
  * WEBSITE: https://www.brucerobot.com/
 %}
-
-clc, clear
+tic;
+clc, clear,close all;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% camera parameters
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -43,7 +43,8 @@ distortion_param = [0.099769, -0.240277, 0.002463, 0.000497, 0.000000];
 opt.H_LC.rpy_init = [90 0 90];
 
 % train data id from getBagData.m
-trained_ids = [5,8,9,11]; % 
+% trained_ids = [5,8,9,11]; % default
+trained_ids = [5];
 skip_indices = [1, 2, 3, 7, 12]; %% skip non-standard 
 
 % validate the calibration result if one has validation dataset(s)
@@ -59,10 +60,11 @@ validation_flag = 1;
 %%% bag_file_path: bag files of images 
 %%% mat_file_path: mat files of extracted lidar target's point clouds
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-path.load_dir = "load_data/";
-path.load_all_vertices = "ALL_LiDAR_vertices/";
-path.bag_file_path = "bagfiles/";
-path.mat_file_path = "LiDARTag_data/";
+path.load_dir = "dataset/ALL_LiDAR_vertices/";
+path.load_all_vertices = "dataset/ALL_LiDAR_vertices/";
+%path.load_all_vertices = "RSS2020/25-Mar-2020 15:36:11/";
+path.bag_file_path = "/media/wang/王衍良_NEU188425085421/1文件/毕设/matlab_dataset/bagfile/";
+path.mat_file_path = "/media/wang/王衍良_NEU188425085421/1文件/毕设/matlab_dataset/point_cloud_mat_files/";
 path.event_name = '';
 
 
@@ -105,8 +107,8 @@ opts.optimizeAllCorners = 0;
 opts.refineAllCorners = 0;
 opts.use_top_consistent_vertices = 0;
 opts.randperm_to_fine_vertices = 0;
-skip = 0; 
-debug = 0;
+skip = 2; 
+debug = 1;
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -159,15 +161,15 @@ diary Debug % save terminal outputs
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% show figures
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-show_image_refinement = 0;
-show_pnp_numerical_result = 0; % show numerical results
-show_lidar_target = 0;
+show_image_refinement = 0;%展示每个image  refine边缘的过程
+show_pnp_numerical_result = 1; % show numerical results
+show_lidar_target = 1;% 展示lidar 点云中target的提取结果，并随机选3个数据集做验证
 % show.lidar_target_optimization = 1;
-show_camera_target = 0;
-show_training_results = 0; % 1
-show_validation_results = 0; %1 
-show_testing_results = 0; %1
-show_baseline_results = 0;
+show_camera_target = 1;%展示图像中target的提取结果，并对验证集做验证
+show_training_results = 0; % 1 只展示训练集的标定结果，方式为将target的角点（三维）投影到图像中
+show_validation_results = 0; %1 只展示验证集的标定结果，方式为将target的点云投影到图像中
+show_testing_results = 0; %1 对测试集的标定结果展示，方式为将target的点云投影到图像中
+show_baseline_results = 1;%展示baseline 信息（文本）
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -218,10 +220,10 @@ opt.H_TL.UseCentroid = 1;
 %  -- used the optimized H_LC to validate the results
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 random_select = 0;
-[BagData, TestData] = getBagData();
+[BagData, TestData] = getBagData(); %点云是mat文件，图像是从bag文件中提取的
 bag_with_tag_list  = [BagData(:).bagfile];
-bag_testing_list = [TestData(:).bagfile];
-test_pc_mat_list = [TestData(:).pc_file];
+bag_testing_list = [TestData(:).bagfile];%测试集中的bag文件
+test_pc_mat_list = [TestData(:).pc_file];% 测试集中与bag文件对应全部的点云
 opts.num_training = length(trained_ids); 
 opts.num_validation = length(bag_with_tag_list) - length(skip_indices) - opts.num_training;    
 
@@ -237,10 +239,10 @@ training_img_fig_handles = createFigHandle(opts.num_training, "training_img");
 training_pc_fig_handles = createFigHandle(opts.num_training, "training_pc");
 validation_fig_handles = createFigHandle(opts.num_validation, "validation_img");
 validation_pc_fig_handles = createFigHandle(opts.num_validation, "validation_pc");
-testing_fig_handles = createFigHandle(size(bag_testing_list, 2), "testing");
+testing_fig_handles = createFigHandle(size(bag_testing_list, 2), "testing");%对测试集的显示，只显示结果，即只显示重投影图像
 base_line.img_hangles = createFigHandle(6, "base_line_vis"); %% don't change
 
-if random_select
+if random_select%随机选择训练集和验证集
     % get training indices
     bag_training_indices = randi([1, length(bag_with_tag_list)], 1, opts.num_training);
 
@@ -270,7 +272,7 @@ bag_chosen_indices = [bag_training_indices, bag_validation_indices];
 ans_error_big_matrix = [];
 ans_counting_big_matrix = [];
 
-if skip
+if skip%加载之前保存的参数
     load(path.load_dir + 'saved_chosen_indices.mat');
     load(path.load_dir + 'saved_parameters.mat');
 end
@@ -312,25 +314,25 @@ else
     load(path.load_dir + "array.mat")
     load(path.load_dir + "BagData.mat")
 end
-
+opts.num_training = length(trained_ids); %当skip～=0时，会读取之前保存的参数，所以需要在这对它重新赋值
 % loading training image
 for k = 1:opts.num_training
     current_index = bag_training_indices(k);
-    loadBagImg(training_img_fig_handles(k), path.bag_file_path, bag_with_tag_list(current_index), "not display", "not clean");
+    loadBagImg(training_img_fig_handles(k), path.bag_file_path, bag_with_tag_list(current_index), "not display", "not clean");%从bag文件中把图像放到句柄中，但不显示出来
     
     if skip==1 || skip == 2
-        for j = 1:BagData(current_index).num_tag
-            for i = 1:size(BagData(current_index).lidar_target(j).scan(:))
+        for j = 1:BagData(current_index).num_tag%对每一个tag
+            for i = 1:size(BagData(current_index).lidar_target(j).scan(:))%对tag的每一个点云
                 showLinedLiDARTag(training_pc_fig_handles(k), ...
                                   BagData(current_index).bagfile, ...
-                                  BagData(current_index).lidar_target(j).scan(i), show_lidar_target);
-                showLinedAprilTag(training_img_fig_handles(k), ...
-                                  BagData(current_index).camera_target(j), show_camera_target);
+                                  BagData(current_index).lidar_target(j).scan(i), show_lidar_target);%把校准对象点云及优化得到的结果显示出来
             end
+            showLinedAprilTag(training_img_fig_handles(k), ...
+                  BagData(current_index).camera_target(j), show_camera_target);%把校准对象的边缘在图像中显示出来
         end
     end
 end
-
+% 对验证集进行同样的操作
 if validation_flag
     for k = 1:opts.num_validation
         current_index = bag_validation_indices(k);
@@ -714,3 +716,4 @@ if validation_flag
     validating_mean = mean(validating_RMSE')'
     validating_std = std(validating_RMSE')'
 end
+toc;
