@@ -28,6 +28,8 @@
  * AUTHOR: Bruce JK Huang (bjhuang[at]umich.edu)
  * WEBSITE: https://www.brucerobot.com/
 %}
+
+%% 提取特征
 tic;
 clc, clear,close all;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -97,15 +99,17 @@ path.event_name = '';
 %%% skip (0/1/2): <default: 1>
 %        0: optimize lidar target's corners
 %           and then calibrate 
-%        1: skip optimize lidar target's corners (if you have done so)
+%        1: skip optimize lidar target's corners (if you have done so),
+%        just calibrate
 %        2: just shown calibration results
 %
 %%% debug (0/1):  <default: 0>
 %               print more stuff at the end to help debugging
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-opts.optimizeAllCorners = 0;
-opts.refineAllCorners = 0;
-opts.use_top_consistent_vertices = 0;
+opts.optimizeAllCorners = 0; % 如果没有优化数据，需要对点云的每一帧进行优化
+% 下面的参数是，得到每一帧的优化结果之后，如果确定最后使用的优化结果
+opts.refineAllCorners = 0;% 意为结合所有所有帧的优化结果进行选取
+opts.use_top_consistent_vertices = 1;% 选择在最相近的前opts.num_lidar_target_pose帧 ,否则选择随机的opts.num_lidar_target_pose帧
 opts.randperm_to_fine_vertices = 0;
 skip = 2; 
 debug = 1;
@@ -163,13 +167,13 @@ diary Debug % save terminal outputs
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 show_image_refinement = 0;%展示每个image  refine边缘的过程
 show_pnp_numerical_result = 1; % show numerical results
-show_lidar_target = 1;% 展示lidar 点云中target的提取结果，并随机选3个数据集做验证
+show_lidar_target = 0;% 展示训练集中lidar 点云中target的提取结果，并随机选3个数据集做验证
 % show.lidar_target_optimization = 1;
-show_camera_target = 1;%展示图像中target的提取结果，并对验证集做验证
+show_camera_target = 0;%展示训练集中图像中target的提取结果，并对验证集做验证
 show_training_results = 0; % 1 只展示训练集的标定结果，方式为将target的角点（三维）投影到图像中
-show_validation_results = 0; %1 只展示验证集的标定结果，方式为将target的点云投影到图像中
+show_validation_results = 0; %1 只展示验证集的标定结果，方式为将target的角点和点云投影到图像中
 show_testing_results = 0; %1 对测试集的标定结果展示，方式为将target的点云投影到图像中
-show_baseline_results = 1;%展示baseline 信息（文本）
+show_baseline_results = 0;%展示baseline结果
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -232,8 +236,10 @@ opts.num_validation = length(bag_with_tag_list) - length(skip_indices) - opts.nu
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 disp("Refining corners of camera targets ...")
-BagData = refineImageCorners(path.bag_file_path, BagData, skip_indices, show_image_refinement);
-
+%%% 如果skip==0，就会重新优化；否则会加载之前的优化结果，不进行优化（减少程序的运行时间）
+if skip==0
+    BagData = refineImageCorners(path.bag_file_path, BagData, skip_indices, show_image_refinement);
+end
 % create figure handles
 training_img_fig_handles = createFigHandle(opts.num_training, "training_img");
 training_pc_fig_handles = createFigHandle(opts.num_training, "training_pc");
@@ -301,7 +307,7 @@ fprintf("-- number of scan to optimize a LiDARTag pose: %i\n", opts.num_scan)
 c = datestr(datetime); 
 path.save_dir = path.save_name + "/" + c + "/";
 
-
+%%% 如果skip～=0，会加载之前的优化结果，不进行优化（减少程序的运行时间）
 if ~skip
     mkdir(path.save_dir);
     save(path.save_dir + 'saved_parameters.mat', 'opts', 'validation_flag');
@@ -377,7 +383,7 @@ if skip == 0
         current_index = bag_chosen_indices(k);
         fprintf("Working on %s -->", bag_with_tag_list(current_index))
         % skip undesire index
-        if any(ismember(current_index, skip_indices))
+        if any(ismember(current_index, skip_indices))%如果里面有一个值属于skip_indices，就跳过
             continue
         end
         % if don't want to get validation set, skip
@@ -388,12 +394,12 @@ if skip == 0
             end
         end
         % training set
-        if any(ismember(bag_training_indices, current_index))
+        if any(ismember(bag_training_indices, current_index))%对于每个训练集
             X_training_tmp = [];
             Y_training_tmp = [];
             H_LT_tmp = [];
 
-            for j = 1:BagData(current_index).num_tag
+            for j = 1:BagData(current_index).num_tag%对于该数据集中每个tag
                 fprintf("----Tag %i/%i", j, BagData(current_index).num_tag)
                 % optimize lidar targets corners
                 [BagData(current_index), H_LT] = getAll4CornersReturnHLT(j, opt, ...
@@ -621,24 +627,26 @@ if validation_flag
 end   
 
 %%% draw results
-% project training target points 
-for i = 1:opts.num_training % which dataset
-    current_index = bag_training_indices(i);
+% project training target points 将优化得到的target角点通过NSNR_P和SNR_P两种方式投到图像上
+if checkDisplay(show_training_results)
+    for i = 1:opts.num_training % which dataset
+        current_index = bag_training_indices(i);
 
-    for j = 1:BagData(current_index).num_tag % which target
-        current_corners_SR = [BagData(current_index).lidar_target(j).scan(:).corners];
-        current_X_SR = [BagData(current_index).lidar_target(j).scan(:).pc_points];
-        if show_baseline_results
-            projectBackToImage(training_img_fig_handles(i), NSNR_P, current_corners_SR, 5, 'kd', "training_SR", "not display", "Not-Clean");
+        for j = 1:BagData(current_index).num_tag % which target
+            current_corners_SR = [BagData(current_index).lidar_target(j).scan(:).corners];
+            current_X_SR = [BagData(current_index).lidar_target(j).scan(:).pc_points];
+            if show_baseline_results
+                projectBackToImage(training_img_fig_handles(i), NSNR_P, current_corners_SR, 5, 'kd', "training_SR", "not display", "Not-Clean");
+            end
+            projectBackToImage(training_img_fig_handles(i), SNR_P, current_corners_SR, 5, 'm*', "training_SR", "not display", "Not-Clean");
+            showLinedAprilTag(training_img_fig_handles(i), BagData(current_index).camera_target(j), show_training_results);
         end
-        projectBackToImage(training_img_fig_handles(i), SNR_P, current_corners_SR, 5, 'm*', "training_SR", "not display", "Not-Clean");
-        showLinedAprilTag(training_img_fig_handles(i), BagData(current_index).camera_target(j), show_training_results);
     end
- end
+end
 drawnow
 
 % project validation results
-if validation_flag
+if validation_flag && checkDisplay(show_validation_results)
     for i = 1:opts.num_validation % which dataset
         current_index = bag_validation_indices(i);
         for j = 1:BagData(current_index).num_tag % which target
@@ -661,10 +669,12 @@ end
 
 % project testing results
 % load testing images and testing pc mat
-testing_set_pc = loadTestingMatFiles(path.mat_file_path, test_pc_mat_list);
-for i = 1: size(bag_testing_list, 2)
-    loadBagImg(testing_fig_handles(i), path.bag_file_path, bag_testing_list(i), "not display", "Not clean"); 
-    projectBackToImage(testing_fig_handles(i), SNR_P, testing_set_pc(i).mat_pc, 3, 'g.', "testing", show_testing_results, "Not-Clean");
+if checkDisplay(show_testing_results)
+    testing_set_pc = loadTestingMatFiles(path.mat_file_path, test_pc_mat_list);
+    for i = 1: size(bag_testing_list, 2)
+        loadBagImg(testing_fig_handles(i), path.bag_file_path, bag_testing_list(i), "not display", "Not clean"); 
+        projectBackToImage(testing_fig_handles(i), SNR_P, testing_set_pc(i).mat_pc, 3, 'g.', "testing", show_testing_results, "Not-Clean");
+    end
 end
 drawnow
 disp("********************************************") 

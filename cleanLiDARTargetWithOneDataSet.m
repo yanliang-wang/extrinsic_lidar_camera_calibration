@@ -33,17 +33,19 @@
 function [X_clean, clean_up] = cleanLiDARTargetWithOneDataSet(X, target_len, opt)
     N = 4; % clean up using N std for x axis
     M = 3; % clean up using M std for y, z axis
-    opt = optimizeCost(opt, X, target_len, 0.001);
-    X_ref = opt.H_opt * X;
+    opt = optimizeCost(opt, X, target_len, 0.001);% 进行优化
+    X_ref = opt.H_opt * X;%将X中的点变换为target坐标系下
 %     distance = sum(X_ref(1:3,:), 1); % L1
-    L_infinity = max(abs(X_ref(1:3,:)));  % L infinity
-    K = find(L_infinity < (target_len/2)*1.025);
-    X_ref_clean_yz = X_ref(:, K); % clean up y and z axis
+    L_infinity = max(abs(X_ref(1:3,:)));  % L infinity  在target坐标系下，每一个点的三个维度中最大的值
+    K = find(L_infinity < (target_len/2)*1.025);%找到target框外的 outliers
+    X_ref_clean_yz = X_ref(:, K); % clean up y and z axis  得到清除outliers的X
     L_infinity = max(X_ref_clean_yz(1:3,:));
+    % 找位于target框中的小框的点的标准偏差
     K_center = find(L_infinity < target_len/4);
     X_std = std(X_ref_clean_yz(:, K_center), 1, 2);
-    Q = find(abs(X_ref_clean_yz(1,:)) < N*(X_std(1))); % clean up x with 2 std
+    Q = find(abs(X_ref_clean_yz(1,:)) < N*(X_std(1))); % clean up x with N * std
     X_ref_clean = X_ref_clean_yz(:, Q);
+    % 显示清除前后之间的对比
     X_clean = inv(opt.H_opt) * X_ref_clean;
     clean_up.std = N*(X_std(1));
     clean_up.L_infinity = L_infinity;

@@ -34,6 +34,7 @@ function total_cost = computeConstraintCustomizedCost(X, theta_x, theta_y, theta
     cost_y = 0;
     cost_z = 0;
     R = rotx(theta_x) * roty(theta_y) * rotz(theta_z);
+    % 把lidar坐标系下的点变换到target坐标系下的点
     x_prime = R(1, :) * X(1:3, :) + T(1);
     y_prime = R(2, :) * X(1:3, :) + T(2);
     z_prime = R(3, :) * X(1:3, :) + T(3);

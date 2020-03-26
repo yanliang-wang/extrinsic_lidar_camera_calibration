@@ -30,11 +30,11 @@
 %}
 
 function showAllLinedLiDARTag(image_hadle, bagfile, LiDARTag, display)
-    if strcmpi("display", display)
-        display = 1;
-    else
-        display = 0;
-    end
+%     if strcmpi("display", display)
+%         display = 1;
+%     else
+%         display = 0;
+%     end
     hold(image_hadle, 'on');
 %             axis(app.LiDARTagFig, 'equal');
 % BagData(current_index).lidar_target(j).scan(i)
@@ -46,7 +46,7 @@ function showAllLinedLiDARTag(image_hadle, bagfile, LiDARTag, display)
         plot3(image_hadle, n_vec(1, :), n_vec(2, :), n_vec(3, :));
     end
     title(image_hadle, bagfile);
-    if display
+    if checkDisplay(display)
         set(get(image_hadle,'parent'),'visible','on');% show the current axes
         axis 'equal'
     end

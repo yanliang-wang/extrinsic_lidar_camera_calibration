@@ -63,6 +63,7 @@ function [bag_data, H_LT] = getAll4CornersReturnHLT(tag_num, opt, path, bag_data
     pc = loadPointCloud(path.mat_file_path, bag_data.lidar_target(tag_num).pc_file);
     num_scan_total = size(pc, 1) - opts.num_scan;
     target_len = bag_data.lidar_target(tag_num).tag_size; 
+    % 优化所有点云中的 每一个帧数据，得到对应的H_LT
     if opts.optimizeAllCorners
         scan_total(num_scan_total) = struct();
         scan_total(num_scan_total).clean_up = [];
@@ -79,23 +80,25 @@ function [bag_data, H_LT] = getAll4CornersReturnHLT(tag_num, opt, path, bag_data
         disp("------------------------------------------------------------")
         tic
         parfor pc_iter = 1:num_scan_total
+        %for pc_iter = 1:num_scan_total % for debug
+        
             if mod(pc_iter, 10) == 0 || pc_iter == num_scan_total || pc_iter == 1
                 fprintf("--- Working on scan: %i/%i\n", pc_iter, num_scan_total)
             end
 %             fprintf("--- Working on scan: %i/%i\n", pc_iter, num_scan_total)
-            X = getPayload(pc, pc_iter, opts.num_scan);
+            X = getPayload(pc, pc_iter, opts.num_scan);%将pc_iter帧的点云与向后连续的opts.num_scan帧数据合并为一个点云,4*n的齐次坐标的形式，第四行为1
             opt_temp = opt.H_TL;
-            [X_clean, scan_total(pc_iter).clean_up] = cleanLiDARTargetWithOneDataSet(X, target_len, opt_temp);
+            [X_clean, scan_total(pc_iter).clean_up] = cleanLiDARTargetWithOneDataSet(X, target_len, opt_temp);% 清除噪声点
 
             % cost
             opt_temp = optimizeCost(opt_temp, X_clean, target_len, scan_total(pc_iter).clean_up.std/2);
-            target_lidar = [0 -target_len/2 -target_len/2 1;
+            target_lidar = [0 -target_len/2 -target_len/2 1;% target的四个顶点 在target中的表示
                             0 -target_len/2  target_len/2 1;
                             0  target_len/2  target_len/2 1;
                             0  target_len/2 -target_len/2 1]';
 
             corners = opt_temp.H_opt \ target_lidar;
-            corners = sortrows(corners', 3, 'descend')';
+            corners = sortrows(corners', 3, 'descend')';% 将四个点的按照Z值，从大到小进行排列
             [centroid, normals] = computeCentroidAndNormals(corners);
             scan_total(pc_iter).corners = corners;
             scan_total(pc_iter).four_corners_line = point3DToLineForDrawing(corners);
@@ -107,7 +110,7 @@ function [bag_data, H_LT] = getAll4CornersReturnHLT(tag_num, opt, path, bag_data
         end
         time_elp = toc;
         fprintf("Spent %f on optimizing corners of %i scans", time_elp, num_scan_total)
-        % 
+        % 求不同帧数据 求得的标定结果之间的误差
         for pc_iter = 1:num_scan_total
             for j = 1:num_scan_total
                 if j == pc_iter
@@ -116,7 +119,7 @@ function [bag_data, H_LT] = getAll4CornersReturnHLT(tag_num, opt, path, bag_data
                     difference = scan_total(j).H \ scan_total(pc_iter).H;
                     logR = logm(difference(1:3,1:3));
                     v = [-logR(1,2) logR(1,3) -logR(2,3) difference(1:3,4)'];
-                    similarity_table(pc_iter).scan(j).diff = norm(v);
+                    similarity_table(pc_iter).scan(j).diff = norm(v);% 2范数
                 end
             end
             similarity_table(pc_iter).mins = sum(mink([similarity_table(pc_iter).scan(:).diff], opts.num_lidar_target_pose));
@@ -128,7 +131,7 @@ function [bag_data, H_LT] = getAll4CornersReturnHLT(tag_num, opt, path, bag_data
     else
         load(path.load_all_vertices + extractBetween(bag_data.bagfile,"",".bag") + '_' + tag_num + '_' + '_all_scan_corners.mat');
     end
-    
+    % 在所有帧中选择最相近的前opts.num_lidar_target_pose帧
     if opts.use_top_consistent_vertices
         [~, chosen_scan] = min([similarity_table(:).mins]);
         [~, chosen_scans] = mink([similarity_table(chosen_scan).scan(:).diff], opts.num_lidar_target_pose);

@@ -35,7 +35,7 @@ function opt = optimizeCost(opt, X, target_size, box_width)
     opt.H_init(1:3, 1:3) = R_init;
 
     if opt.UseCentroid
-        centroid = mean(X, 2);
+        centroid = mean(X, 2);%质心的齐次坐标形式
         opt.H_init(1:3, 4) = -centroid(1:3);
     else
         opt.H_init(1:3, 4) = opt.T_init;

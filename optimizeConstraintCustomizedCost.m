@@ -30,14 +30,16 @@
 %}
 
 function opt = optimizeConstraintCustomizedCost(opt, X, target_size, box_width)
+    %% 配置优化问题参数
+    % 声明优化变量，并限制范围
     theta_x = optimvar('theta_x', 1, 1,'LowerBound',-90,'UpperBound',90); % 1x1
     theta_y = optimvar('theta_y', 1, 1,'LowerBound',-90,'UpperBound',90); % 1x1
     theta_z = optimvar('theta_z', 1, 1,'LowerBound',-90,'UpperBound',90); % 1x1
     T = optimvar('T', 1, 3); % 1x3
-    prob = optimproblem;
+    prob = optimproblem;% 声明一个优化问题
     f = fcn2optimexpr(@computeConstraintCustomizedCost, X, ...
                        theta_x, theta_y, theta_z, T, target_size, box_width);
-    prob.Objective = f;
+    prob.Objective = f;%代价函数
     x0.theta_x = 0;
     x0.theta_y = 0;
     x0.theta_z = 0;
@@ -48,18 +50,20 @@ function opt = optimizeConstraintCustomizedCost(opt, X, target_size, box_width)
     max_trail = 5;
     num_tried = 1;
     status = 0;
+    %% 求解优化问题
     while status <=0 
         [sol, fval, status, ~] = solve(prob, x0, 'Options', options);
         if status <=0 
             warning("optimization failed")
         end
         num_tried = num_tried + 1;
-        if (num_tried + 1 > max_trail)
+        if (num_tried + 1 > max_trail)% 如果尝试max_trail次求解都没有接触的话，就报错
             warning("tried too many time, optimization still failed, current status:")
             disp(status)
             break;
         end
     end
+    % 优化结果
     R_final = rotx(sol.theta_x) * roty(sol.theta_y) * rotz(sol.theta_z);
     opt.H_opt = eye(4);
     opt.H_opt(1:3, 1:3) = R_final;
